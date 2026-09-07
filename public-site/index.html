@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PDF 报表比对原型</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    :root{--bg:#f4f7fb;--card:#fff;--line:#dbe3ef;--blue:#2563eb;--green:#16a34a;--red:#dc2626;--orange:#d97706;--muted:#64748b}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#172033;font-family:Arial,"Microsoft YaHei",sans-serif}
+    header{padding:22px 28px;background:linear-gradient(135deg,#1d4ed8,#0f766e);color:#fff}h1{margin:0;font-size:23px}header p{margin:8px 0 0;opacity:.9}
+    main{max-width:1500px;margin:auto;padding:18px}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
+    .card{grid-column:span 12;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 1px 2px #00000008}
+    .half{grid-column:span 6}.section{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.section h2{font-size:16px;margin:0}
+    .small,.muted{font-size:12px;color:var(--muted)}label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input[type=file]{display:none}.upload-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .dropzone{display:block;border:2px dashed #b7c6dc;background:#f8fbff;border-radius:14px;padding:18px;min-height:112px;text-align:center;cursor:pointer}
+    .dropzone:hover,.dropzone.drag{border-color:var(--blue);background:#eef6ff}.dropzone strong{display:block;color:#172033;margin-bottom:8px}.dropzone span{font-size:12px;color:var(--muted)}
+    button{border:0;border-radius:9px;padding:10px 16px;background:var(--blue);color:#fff;cursor:pointer}button.secondary{background:#475569}button.view{padding:6px 10px;font-size:12px}
+    button:disabled{opacity:.5;cursor:not-allowed}.actions{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+    .status{padding:10px 12px;border-radius:9px;background:#eff6ff;border:1px solid #bfdbfe;font-size:13px}.status.ok{background:#ecfdf5;border-color:#bbf7d0}.status.bad{background:#fef2f2;border-color:#fecaca}
+    .fields{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.field{background:#f8fbff;border:1px solid var(--line);border-radius:10px;padding:10px}.field b{font-size:13px;display:block;margin-bottom:6px}
+    pre{white-space:pre-wrap;word-break:break-word;background:#0f172a;color:#dbeafe;border-radius:10px;padding:12px;max-height:260px;overflow:auto;font-size:12px}
+    table{width:100%;border-collapse:collapse}th,td{border:1px solid var(--line);padding:9px 8px;font-size:13px;vertical-align:top}th{background:#f8fafc;text-align:center}
+    td{text-align:center}.pass{color:var(--green);font-weight:700}.fail{color:var(--red);font-weight:700}.warn{color:var(--orange);font-weight:700}
+    .bad-list{margin-top:12px;padding:12px;border:1px solid #fecaca;background:#fff7f7;border-radius:10px}.bad-list h3{margin:0 0 8px;font-size:14px;color:var(--red)}.bad-list ul{margin:0;padding-left:20px}
+    .modal-mask{display:none;position:fixed;inset:0;background:#0f172a73;align-items:center;justify-content:center;z-index:9999}.modal{width:min(460px,calc(100vw - 36px));background:#fff;border-radius:16px;padding:24px;text-align:center;box-shadow:0 20px 60px #0004}.modal h3{margin:0 0 14px}.modal p{line-height:1.6;margin:0 0 18px}
+    @media(max-width:900px){.half{grid-column:span 12}.upload-grid,.fields{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header><h1>PDF 报表比对结果生成原型</h1><p>支持多组 PDF 无序匹配、自动比对和 Excel 导出。</p></header>
+<main><div class="grid">
+  <section class="card">
+    <div class="section"><h2>1. 上传文件</h2><span class="small">支持多文件拖拽上传</span></div>
+    <div class="upload-grid">
+      <label id="dz1" class="dropzone"><input id="pdf1" type="file" accept=".pdf" multiple><strong>理化检测试验报告</strong><span id="pdf1Name">点击选择，或把 PDF 拖到这里</span></label>
+      <label id="dz2" class="dropzone"><input id="pdf2" type="file" accept=".pdf" multiple><strong>产品跟单（热处理）</strong><span id="pdf2Name">点击选择，或把 PDF 拖到这里</span></label>
+      <label id="dz3" class="dropzone"><input id="tpl" type="file" accept=".xlsx,.xls"><strong>Excel 模板（备用）</strong><span id="tplName">点击选择，或把 Excel 拖到这里</span></label>
+    </div>
+    <div class="actions"><button id="parseBtn">解析并比对</button><button id="exportBtn" class="secondary" disabled>导出 Excel</button><span id="status" class="status">等待上传文件。</span></div>
+  </section>
+
+  <section class="card result-card">
+    <div class="section"><h2>2. 最终比对结果</h2></div>
+    <div style="overflow:auto"><table id="result"><thead><tr><th>查看</th><th>零件名称</th><th>零件图号</th><th>Rm</th><th>Rp0.2</th><th>A4</th><th>Z</th><th>K(缺口深度)(J)B=10mm</th><th>T</th><th>总体结论</th></tr></thead><tbody><tr><td colspan="10" class="small">尚未解析</td></tr></tbody></table></div>
+    <div id="badList" class="bad-list" style="display:none"><h3>不合格文件组</h3><ul></ul></div>
+  </section>
+
+  <section class="card half"><div class="section"><h2>3. 理化检测实验报告：识别结果</h2></div><div id="fields1" class="fields"></div><label style="margin-top:12px">原始文本（调试用）</label><pre id="raw1">未解析</pre></section>
+  <section class="card half"><div class="section"><h2>4. 产品跟单（热处理）：识别结果</h2></div><div id="fields2" class="fields"></div><label style="margin-top:12px">原始文本（调试用）</label><pre id="raw2">未解析</pre></section>
+</div></main>
+
+<div id="mismatchModal" class="modal-mask"><div class="modal"><h3>文件不匹配</h3><p>理化检测实验报告和产品跟单不匹配，请重新上传</p><div id="mismatchDetail" class="small" style="margin-bottom:16px"></div><button id="modalOk">好的我已知晓</button></div></div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+const S={pairs:[],rows:[],selected:0};const $=id=>document.getElementById(id);
+const clean=s=>String(s||'').replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+const nums=s=>(String(s||'').match(/-?\d+(?:\.\d+)?/g)||[]).map(Number);
+const show=v=>v===null||v===undefined||v===''?'字段缺失':String(v);const n1=x=>Math.round(x*10)/10;
+function setStatus(t,k=''){const e=$('status');e.textContent=t;e.className='status'+(k?' '+k:'')}
+async function pdfPages(file){const b=await file.arrayBuffer(),pdf=await pdfjsLib.getDocument({data:b}).promise,p=[];for(let n=1;n<=pdf.numPages;n++){const pg=await pdf.getPage(n),tc=await pg.getTextContent(),it=tc.items.filter(x=>x.str&&x.str.trim()).map(x=>({str:x.str,x:x.transform[4],y:Math.round(x.transform[5]/2)*2})),m=new Map();for(const x of it){if(!m.has(x.y))m.set(x.y,[]);m.get(x.y).push(x)}p.push({page:n,lines:[...m].sort((a,b)=>b[0]-a[0]).map(([y,a])=>{a.sort((u,v)=>u.x-v.x);return{y,items:a,text:a.map(x=>x.str).join(' ')}})})}return p}
+function rawText(p){return clean(p.flatMap(x=>x.lines.map(y=>y.text)).join('\n'))}function flat(p){return rawText(p).replace(/\s+/g,' ')}
+function between(t,l,r){const i=t.indexOf(l),j=i<0?-1:t.indexOf(r,i+l.length);return i>=0&&j>=0?clean(t.slice(i+l.length,j)):null}
+function token(t,l){const label=l.split('').join('\\s*'),m=String(t||'').match(new RegExp(label+'\\s*[:：]?\\s*([^\\s]+)'));return m?m[1]:null}
+function firstId(s){const m=String(s||'').match(/[A-Za-z0-9][A-Za-z0-9_/-]*/);return m?m[0]:null}
+function cleanIdToken(s){return firstId(String(s||'').replace(/^[^A-Za-z0-9_/-]+/,'').split(/\s+/)[0])}
+function nearestIdentifierAround(t,label){
+  const s=String(t||''), re=new RegExp(label.split('').join('\\s*'),'g'); let m;
+  while((m=re.exec(s))!==null){
+    const before=s.slice(Math.max(0,m.index-100),m.index).trim().split(/\s+/).filter(Boolean).reverse();
+    const after=s.slice(m.index+m[0].length,m.index+m[0].length+100).trim().split(/\s+/).filter(Boolean);
+    const valid=x=>/^[A-Za-z0-9_/-]+$/.test(x||'');
+    const left=before.find(valid),right=after.find(valid);
+    if(right)return right;
+    if(left)return left;
+  }
+  return null;
+}
+function metricRow(t){const m=t.match(/B\s*=\s*10\s*mm\s*([A-Za-z0-9][A-Za-z0-9_-]{2,})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s*[,，]\s*(\d+(?:\.\d+)?)\s*[,，]\s*(\d+(?:\.\d+)?)\s*\(?\s*KV8\s*\)?\s*(-?\d+(?:\.\d+)?)/i);return m?{sampleId:m[1],metrics:{Rm:+m[2],'Rp0.2':+m[3],A4:+m[4],Z:+m[5]},kValues:[+m[6],+m[7],+m[8]],T:+m[9]}:null}
+function parseFirst(p){const t=flat(p),m=metricRow(t);return{fileText:rawText(p),sampleName:between(t,'样品名称','材料牌号')||token(t,'样品名称'),drawingNo:cleanIdToken(token(t,'图号')||between(t,'图号','BOMCO'))||nearestIdentifierAround(t,'图号'),sampleId:m?m.sampleId:token(t,'样品编号'),metrics:m?m.metrics:{Rm:null,'Rp0.2':null,A4:null,Z:null},kValues:m?m.kValues:[],tValue:m?m.T:null}}
+function normalizeSign(s){return({'＞':'>','≥':'>=','＜':'<','≤':'<=','＝':'=','大于等于':'>=','不小于':'>=','不低于':'>=','小于等于':'<=','不大于':'<=','不高于':'<=','不超过':'<=','大于':'>','小于':'<','等于':'='})[s]||s}
+function dispSign(s){return({' > ':'>','>=':'≥','<=':'≤','>':'>','<':'<','=':'='})[normalizeSign(s)]||s}
+function parseRules(t){const r={},cw='(?:大于等于|小于等于|不小于|不低于|不大于|不高于|不超过|大于|小于|等于|>=|<=|≥|≤|＞|＜|>|<|＝|=)',one=(k,l,u)=>{const m=t.match(new RegExp(l+'[\\s\\S]{0,80}?('+cw+')[\\s\\S]{0,80}?(-?\\d+(?:\\.\\d+)?)\\s*'+u,'i'));if(m){const s=normalizeSign(m[1]);r[k]={sign:s,threshold:+m[2],text:dispSign(s)+m[2]}}};one('Rm','Rm','MPa');one('Rp0.2','Rp\\s*0\\s*[.,．]?\\s*2','MPa');one('A4','A4','%');one('Z','\\bZ','%');const a=t.match(new RegExp('KV8[\\s\\S]{0,80}?(?:平均值|平均)?[\\s\\S]{0,60}?('+cw+')[\\s\\S]{0,60}?(-?\\d+(?:\\.\\d+)?)\\s*J','i')),q=t.match(new RegExp('(?:任一单个值|其中任一单个值|单个值)[\\s\\S]{0,60}?('+cw+')[\\s\\S]{0,60}?(-?\\d+(?:\\.\\d+)?)\\s*J','i'));r.Kavg=a?{sign:normalizeSign(a[1]),threshold:+a[2],text:dispSign(a[1])+a[2]}:null;r.Kmin=q?{sign:normalizeSign(q[1]),threshold:+q[2],text:dispSign(q[1])+q[2]}:null;return r}
+function identifierCandidates(t){
+  const out=[];const re=/[A-Za-z0-9][A-Za-z0-9_/-]*/g;let m;
+  while((m=re.exec(String(t||'')))!==null){if(!out.includes(m[0]))out.push(m[0])}
+  return out;
+}
+function furnaceAfterFirst(t){
+  const s=String(t||''), i=s.indexOf('炉号');
+  if(i<0)return null;
+  const before=s.slice(0,i).replace(/[\s:：,，;；、]+$/,'');
+  const parts=before.split(/\s+/).filter(Boolean);
+  const candidate=parts.length?parts[parts.length-1]:'';
+  const m=candidate.match(/[A-Za-z0-9_/-]+$/);
+  return m?m[0]:null;
+}
+function parseSecond(p){const t=flat(p),rules=parseRules(t);return{fileText:rawText(p),partName:between(t,'零件名称','零件图号')||token(t,'零件名称'),drawingNo:cleanIdToken(token(t,'零件图号')||between(t,'零件图号','炉号'))||nearestIdentifierAround(t,'零件图号'),furnaceNo:cleanIdToken(furnaceAfterFirst(t)),rules}}
+function norm(v){return String(v||'').normalize('NFKC').toUpperCase().replace(/[φΦФØø]/g,'Φ').replace(/[×＊*x]/g,'X').replace(/[－–—﹣]/g,'-').replace(/\s+/g,'').replace(/[：:，,。.;；、()（）\[\]【】]/g,'')}
+function equal(a,b){return Boolean(norm(a)&&norm(b)&&norm(a)===norm(b))}
+function matchInfo(a,b){
+  const name=equal(a.sampleName,b.partName),drawing=equal(a.drawingNo,b.drawingNo);
+  const candidates=[b.furnaceNo,...(b.furnaceCandidates||[])].filter(Boolean);
+  const idCandidate=candidates.find(x=>equal(a.sampleId,x))||null;
+  return{name,drawing,id:Boolean(idCandidate),candidate:idCandidate,first:{name:a.sampleName,drawing:a.drawingNo,id:a.sampleId},second:{name:b.partName,drawing:b.drawingNo,id:idCandidate||b.furnaceNo}};
+}
+function matchPair(a,b){return matchInfo(a,b).name&&matchInfo(a,b).drawing&&matchInfo(a,b).id}
+function check(v,r){if(v===null||v===undefined||!Number.isFinite(Number(v)))return{v:'字段缺失',ok:false};if(!r||!Number.isFinite(Number(r.threshold)))return{v:'识别错误',ok:false};const actual=Number(v),x=Number(r.threshold),s=normalizeSign(r.sign);let ok=false;if(s==='>')ok=actual>x;else if(s==='>=')ok=actual>=x;else if(s==='<')ok=actual<x;else if(s==='<=')ok=actual<=x;else if(s==='=')ok=actual===x;else return{v:'识别错误',ok:false};return{v:ok?'合格':'不合格',ok}}
+function checkK(v,r){if(!Array.isArray(v)||!v.length)return{v:'字段缺失',ok:false};const values=v.map(Number).filter(Number.isFinite);if(!values.length)return{v:'字段缺失',ok:false};const avg=values.reduce((a,b)=>a+b,0)/values.length,min=Math.min(...values);const avgCheck=check(avg,r&&r.Kavg),minCheck=check(min,r&&r.Kmin),ok=avgCheck.ok&&minCheck.ok;return{v:`平均值=${n1(avg)}J；最小值=${n1(min)}J；${ok?'合格':'不合格'}`,ok}}
+function compare(a,b){const r=b.rules,c1=check(a.metrics.Rm,r.Rm),c2=check(a.metrics['Rp0.2'],r['Rp0.2']),c3=check(a.metrics.A4,r.A4),c4=check(a.metrics.Z,r.Z),c5=checkK(a.kValues,r);return{partName:b.partName,drawingNo:b.drawingNo,rm:c1.v,rp:c2.v,a4:c3.v,z:c4.v,k:c5.v,t:show(a.tValue),total:[c1,c2,c3,c4,c5].every(x=>x.ok)?'合格':'不合格'}}
+function renderFields(id,obj){const box=$(id);box.innerHTML='';for(const[k,v]of Object.entries(obj)){const d=document.createElement('div');d.className='field';d.innerHTML=`<b>${k}</b><div>${Array.isArray(v)?v.join(', '):show(v)}</div>`;box.appendChild(d)}}
+function renderSelected(i){const p=S.pairs[i];if(!p)return;const a=p.first,b=p.second;renderFields('fields1',{'样品名称':a.sampleName,'图号':a.drawingNo,'样品编号':a.sampleId,Rm:a.metrics.Rm,'Rp0.2':a.metrics['Rp0.2'],A4:a.metrics.A4,Z:a.metrics.Z,'K原始值':a.kValues,T:a.tValue});renderFields('fields2',{'零件名称':b.partName,'零件图号':b.drawingNo,'炉号':b.furnaceNo,'Rm的要求':b.rules.Rm?.text||'识别错误','Rp0.2的要求':b.rules['Rp0.2']?.text||'识别错误','A4的要求':b.rules.A4?.text||'识别错误','Z的要求':b.rules.Z?.text||'识别错误','K的平均值要求':b.rules.Kavg?.text||'识别错误','K的最小值要求':b.rules.Kmin?.text||'识别错误'});$('raw1').textContent=a.fileText;$('raw2').textContent=b.fileText}
+function renderRows(){const tb=$('result').querySelector('tbody');tb.innerHTML='';S.rows.forEach((r,i)=>{const tr=document.createElement('tr');const view=document.createElement('button');view.className='view';view.textContent='查看';view.onclick=()=>renderSelected(i);const td0=document.createElement('td');td0.appendChild(view);tr.appendChild(td0);[r.partName,r.drawingNo,r.rm,r.rp,r.a4,r.z,r.k,r.t,r.total].forEach(v=>{const td=document.createElement('td');td.textContent=v;if(String(v).includes('不合格'))td.className='fail';else if(String(v).includes('合格'))td.className='pass';else if(v==='字段缺失'||v==='识别错误')td.className='warn';tr.appendChild(td)});tb.appendChild(tr)});$('exportBtn').disabled=!S.rows.length;const bad=S.rows.map((r,i)=>({r,i})).filter(x=>x.r.total==='不合格'),ul=$('badList').querySelector('ul');ul.innerHTML='';$('badList').style.display=bad.length?'block':'none';bad.forEach(x=>{const li=document.createElement('li');const p=S.pairs[x.i];li.textContent=`第 ${x.i+1} 组：${p.first.fileName||'理化报告'} ↔ ${p.second.fileName||'产品跟单'}`;ul.appendChild(li)})}
+function showModal(detail=''){ $('mismatchDetail').textContent=detail; $('mismatchModal').style.display='flex' }function clear(){S.pairs=[];S.rows=[];renderRows();$('fields1').innerHTML='';$('fields2').innerHTML='';$('raw1').textContent='未解析';$('raw2').textContent='未解析'}
+async function parse(){const fa=[...$('pdf1').files],fb=[...$('pdf2').files];if(!fa.length||!fb.length){setStatus('请至少上传一份理化检测报告和一份产品跟单','bad');return}setStatus('正在解析...');try{const A=await Promise.all(fa.map(async f=>({fileName:f.name,...parseFirst(await pdfPages(f))}))),B=await Promise.all(fb.map(async f=>({fileName:f.name,...parseSecond(await pdfPages(f))}))),used=new Set(),pairs=[],problems=[];for(const a of A){let found=-1,info=null;for(let j=0;j<B.length;j++){if(used.has(j))continue;const x=matchInfo(a,B[j]);if(x.name&&x.drawing&&x.id){found=j;info=x;break}}if(found>=0){used.add(found);if(info.candidate)B[found].furnaceNo=info.candidate;pairs.push({first:a,second:B[found]})}else{const candidate=B.find((b,j)=>!used.has(j));if(candidate){const x=matchInfo(a,candidate);problems.push(`${a.fileName}：名称${x.name?'✓':'✗'}，图号${x.drawing?'✓':'✗'}，编号/炉号${x.id?'✓':'✗'}`)}else problems.push(`${a.fileName}：未找到对应产品跟单`)}}B.forEach((b,j)=>{if(!used.has(j))problems.push(`${b.fileName}：未找到对应理化检测报告`)});if(!pairs.length||problems.length){clear();showModal(problems.join('；'));setStatus('存在不匹配或未配对文件，请重新上传。','bad');return}S.pairs=pairs;S.rows=pairs.map(p=>compare(p.first,p.second));renderRows();renderSelected(0);setStatus(`解析完成：${pairs.length} 组。`,'ok')}catch(e){console.error(e);setStatus('解析失败：'+e.message,'bad')}}
+function exportX(){if(!S.rows.length)return;const ws=XLSX.utils.json_to_sheet(S.rows.map(r=>({'零件名称':r.partName,'零件图号':r.drawingNo,Rm:r.rm,'Rp0.2':r.rp,A4:r.a4,Z:r.z,'K(缺口深度)(J)B=10mm':r.k,T:r.t,'总体结论':r.total})));ws['!cols']=[{wch:24},{wch:22},{wch:14},{wch:14},{wch:12},{wch:12},{wch:42},{wch:10},{wch:14}];const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'结果导出');XLSX.writeFile(wb,'结果导出.xlsx')}
+function setup(zoneId,inputId,nameId,re){const z=$(zoneId),i=$(inputId),n=$(nameId);i.onchange=()=>{const fs=[...i.files];n.textContent=fs.length===1?fs[0].name:`已选择 ${fs.length} 个文件`};['dragenter','dragover'].forEach(e=>z.addEventListener(e,x=>{x.preventDefault();z.classList.add('drag')}));['dragleave','drop'].forEach(e=>z.addEventListener(e,x=>{x.preventDefault();z.classList.remove('drag')}));z.addEventListener('drop',e=>{const fs=[...e.dataTransfer.files].filter(f=>re.test(f.name));if(!fs.length){setStatus('文件类型不符合要求。','bad');return}const dt=new DataTransfer();fs.forEach(f=>dt.items.add(f));i.files=dt.files;n.textContent=fs.length===1?fs[0].name:`已选择 ${fs.length} 个文件`})}
+setup('dz1','pdf1','pdf1Name',/\.pdf$/i);setup('dz2','pdf2','pdf2Name',/\.pdf$/i);setup('dz3','tpl','tplName',/\.(xlsx|xls)$/i);$('modalOk').onclick=()=>{$('mismatchModal').style.display='none'};$('parseBtn').onclick=parse;$('exportBtn').onclick=exportX;
+</script>
+</body>
+</html>
